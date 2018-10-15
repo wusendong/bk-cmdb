@@ -92,7 +92,7 @@ func (s *Service) DiscoverNetDevice(req *restful.Request, resp *restful.Response
 		resp.WriteError(http.StatusBadRequest, &metadata.RespError{Msg: defErr.Error(common.CCErrCommJSONUnmarshalFailed)})
 		return
 	}
-	blog.Infof("[NetDevice][DiscoverNetDevice] discover by %+v", cond)
+	blog.Infof("[NetDevice   DiscoverNetDevice] discover by %+v", cond)
 
 	err := s.Logics.DiscoverNetDevice(pheader, cond.Collectors)
 	if err != nil {
