@@ -2,59 +2,64 @@
 IMAGE?=image_placeholder
 NPM?=npm
 
-include $(realpath $(firstword $(subst :, ,${GOPATH}))/src/configcenter/scripts/Makefile)
+GITHASH?=$(shell git rev-parse HEAD)
+GITTAG?=$(shell git describe --all --tags --exact-match 2>/dev/null | awk -F '/' '{print $$NF}')
+VERSION?=$(shell git symbolic-ref -q --short HEAD || git describe --all --tags --exact-match 2>/dev/null | awk -F '-' '{print $$NF}')
+ISDEBUG?=false
+ifeq ($(ISDEBUG),true)
+	BUILDTIME:=$(shell date +%Y-%m-%d)
+	GOBUILD_FLAGS = -ldflags "-X configcenter/src/common/version.CCRunMode=dev -X configcenter/src/common/version.CCVersion=${VERSION} -X configcenter/src/common/version.CCBuildTime=${BUILDTIME} -X configcenter/src/common/version.CCGitHash=${GITHASH} -X configcenter/src/common/version.CCTag=${GITTAG}"
+else
+	BUILDTIME:=$(shell date +%Y-%m-%dT%T%z)
+	GOBUILD_FLAGS = -ldflags "-X configcenter/src/common/version.CCVersion=${VERSION} -X configcenter/src/common/version.CCBuildTime=${BUILDTIME} -X configcenter/src/common/version.CCGitHash=${GITHASH} -X configcenter/src/common/version.CCTag=${GITTAG}"
+endif
 
-.PHONY:default
-default:
-	@echo ""
-	@echo -e "\033[34mbuilding server... \033[0m"
-	@rm -rf "./ui/node_modules"
-	@cd  $(SCRIPT_DIR) && bash ./build.sh
+ifeq ($(GOPATH),)
+	PROJECT_ROOT?=$(shell readlink -f $(firstword $(subst :, ,${GOPATH}))/src/configcenter)
+else
+	PROJECT_ROOT?=`git rev-parse --show-toplevel`
+endif
+
+SCRIPT_DIR?=$(shell readlink -f $(PROJECT_ROOT)/scripts)
+RESOURCE_DIR?=$(shell readlink -f $(PROJECT_ROOT)/resources)
+SOURCE_ROOT?=$(shell readlink -f $(PROJECT_ROOT)/src)
+BUILD_DIR?=$(SOURCE_ROOT)/bin/build/$(VERSION)
+BIN_PATH?=$(BUILD_DIR)
+
+targets = $(shell find . -name 'build_info' | xargs awk 'FNR==1{print $$1}')
+
+.PHONY: default ui server linux clean cleanall package enterprise
+default: server ;
+
+server: $(targets)
+	@echo "\033[34mbuild server finish\033[0m"
 	@cd $(SCRIPT_DIR) && python ./generate.py -t '$(BIN_PATH)' -i '${IMAGE}' -o '$(BIN_PATH)/docker'
-	@echo -e "\033[34mbuilding web... \033[0m"
-	@cd $(SOURCE_ROOT)/ui && bash ./build.sh ${NPM} ${BIN_PATH}
 
-.PHONY:linux
+$(targets):
+	@echo "\033[34mbuild target [ $@ ] to $(BIN_PATH)/$@/$@ ... \033[0m" ;\
+	export TARGET_PATH=$(dir $(shell find $(SOURCE_ROOT) -name 'build_info' | xargs grep -l $@))  ;\
+	export TARGET_PORT=$(shell find $(SOURCE_ROOT) -name 'build_info' | xargs grep -l $@ | xargs awk 'FNR==1{print $$2}')  ;\
+	cd $$TARGET_PATH && go build $(GOBUILD_FLAGS) -o $(BIN_PATH)/$@/$@ ;\
+	python $(SCRIPT_DIR)/prepare_cfg.py $(BIN_PATH) $@ $(RESOURCE_DIR) $(SCRIPT_DIR) $$TARGET_PORT $(VERSION)
+
 linux:
-	@echo ""
-	@echo -e "\033[34mbuilding server... \033[0m"
-	@rm -rf "./ui/node_modules"
-	@cd  $(SCRIPT_DIR) && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 bash ./build.sh
-	@cd $(SCRIPT_DIR) && python ./generate.py -t '$(BIN_PATH)' -i '${IMAGE}' -o '$(BIN_PATH)/docker'
-	@echo -e "\033[34mbuilding web... \033[0m"
-	@cd $(SOURCE_ROOT)/ui && bash ./build.sh ${NPM} ${BIN_PATH}
+	@export CGO_ENABLED=0
+	@export GOOS=linux 
+	@export GOARCH=amd64
+	$(MAKE)
 
-.PHONY:server
-server:
-	@echo ""
-	@echo -e "\033[34mbuilding server... \033[0m"
-	@rm -rf "./ui/node_modules"
-	@cd  $(SCRIPT_DIR) &&  bash ./build.sh
-	@cd $(SCRIPT_DIR) && python ./generate.py -t '$(BIN_PATH)' -i '${IMAGE}' -o '$(BIN_PATH)/docker'
-
-.PHONY:ui
 ui:
 	@echo ""
-	@echo -e "\033[34mbuilding web... \033[0m"
+	@echo "\033[34mbuilding web... \033[0m"
 	@rm -rf "./ui/node_modules"
 	@cd $(SOURCE_ROOT)/ui && bash ./build.sh ${NPM} ${BIN_PATH}
 
-.PHONY:debug
-debug:
-	@echo ""
-	@echo -e "\033[34mbuilding debug... \033[0m"
-	@rm -rf "./ui/node_modules"
-	@cd $(SCRIPT_DIR) && bash ./build.sh debug
-	@cd $(SCRIPT_DIR) && python ./generate.py -t '$(BIN_PATH)' -i '${IMAGE}' -o '$(BIN_PATH)/docker'
-
-.PHONY:package
 package:
 	rm -rf $(SOURCE_ROOT)/bin/pub/cmdb
 	mkdir -p $(SOURCE_ROOT)/bin/pub && cp -R $(BIN_PATH) ./bin/pub/cmdb
 	cd $(SOURCE_ROOT)/bin/pub && tar -zvcf cmdb.tar.gz cmdb
 	@echo -e "\033[34mpackage success and store in $(SOURCE_ROOT)/bin/pub/cmdb.tar.gz\033[0m"
 
-.PHONY:enterprise
 enterprise:
 	rm -rf $(SOURCE_ROOT)/bin/enterprise/cmdb
 	mkdir -p $(SOURCE_ROOT)/bin/enterprise/cmdb/server/bin/
@@ -67,10 +72,9 @@ enterprise:
 	cp -R ${RESOURCE_DIR}/language/*  $(SOURCE_ROOT)/bin/enterprise/cmdb/language
 	cp  ${BIN_PATH}/cmdb_*/cmdb_*  $(SOURCE_ROOT)/bin/enterprise/cmdb/server/bin/
 
-.PHONY:clean
 clean:
 	rm -rf ${BIN_PATH}
 
-.PHONY:cleanall
 cleanall:
 	rm -rf $(SOURCE_ROOT)/bin
+
