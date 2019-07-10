@@ -18,7 +18,6 @@ import (
 	"configcenter/src/common/backbone/service_mange/zk"
 	"configcenter/src/common/registerdiscover"
 	"configcenter/src/common/types"
-	"configcenter/src/framework/core/errors"
 )
 
 type ServiceRegisterInterface interface {
@@ -39,10 +38,6 @@ type serviceRegister struct {
 }
 
 func (s *serviceRegister) Register(path string, c types.ServerInfo) error {
-	if c.IP == "0.0.0.0" {
-		return errors.New("register ip can not be 0.0.0.0")
-	}
-
 	js, err := json.Marshal(c)
 	if err != nil {
 		return err

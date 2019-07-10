@@ -1,0 +1,1 @@
+/bin/${BUILD_TARGET} --addrport=$$ADDRPORT --regdiscv=$REGDISCV
